@@ -1,0 +1,169 @@
+# Re-splitting the data
+
+# Read all the data again
+
+train_mild_dir = '/content/drive/MyDrive/final-project/dataset/train/MildDemented/'
+train_mod_dir = '/content/drive/MyDrive/final-project/dataset/train/ModerateDemented/'
+train_nd_dir = '/content/drive/MyDrive/final-project/dataset/train/NonDemented/'
+train_vmild_dir = '/content/drive/MyDrive/final-project/dataset/train/VeryMildDemented/'
+test_mild_dir = '/content/drive/MyDrive/final-project/dataset/test/MildDemented/'
+test_mod_dir = '/content/drive/MyDrive/final-project/dataset/test/ModerateDemented/'
+test_nd_dir = '/content/drive/MyDrive/final-project/dataset/test/NonDemented/'
+test_vmild_dir = '/content/drive/MyDrive/final-project/dataset/test/VeryMildDemented/'
+
+# See all the data combine together
+
+os.listdir(train_nd_dir)
+
+train_x = []
+train_y = []
+test_x = []
+test_y = []
+
+for image_path in os.listdir(train_nd_dir):
+  img = imread(train_nd_dir + image_path, as_gray=True)
+  img = img.astype('float32')
+  img /= 255.0
+  train_x.append(img)
+  train_y.append('ND')
+
+for image_path in os.listdir(train_vmild_dir):
+  img = imread(train_vmild_dir+image_path, as_gray=True)
+  img = img.astype('float32')
+  img /= 255.0
+  train_x.append(img)
+  train_y.append('VMILD')
+
+for image_path in os.listdir(train_mild_dir):
+  img = imread(train_mild_dir+image_path, as_gray=True)
+  img = img.astype('float32')
+  img /= 255.0
+  train_x.append(img)
+  train_y.append('MILD')
+
+for image_path in os.listdir(train_mod_dir):
+  img = imread(train_mod_dir+image_path, as_gray=True)
+  img = img.astype('float32')
+  img /= 255.0
+  train_x.append(img)
+  train_y.append('MOD')
+
+for image_path in os.listdir(test_nd_dir):
+  img = imread(test_nd_dir+image_path, as_gray=True)
+  img = img.astype('float32')
+  img /= 255.0
+  test_x.append(img)
+  test_y.append('ND')
+  
+for image_path in os.listdir(test_vmild_dir):
+  img = imread(test_vmild_dir+image_path, as_gray=True)
+  img = img.astype('float32')
+  img /= 255.0
+  test_x.append(img)
+  test_y.append('VMILD')
+
+for image_path in os.listdir(test_mild_dir):
+  img = imread(test_mild_dir+image_path, as_gray=True)
+  img = img.astype('float32')
+  img /= 255.0
+  test_x.append(img)
+  test_y.append('MILD')
+
+for image_path in os.listdir(test_mod_dir):
+  img = imread(test_mod_dir+image_path, as_gray=True)
+  img = img.astype('float32')
+  img /= 255.0
+  test_x.append(img)
+  test_y.append('MOD')
+
+# Combine all data into one large dataset and one-hot encode labels
+
+train_x = np.array(train_x)
+train_y = np.array(train_y)
+test_x = np.array(test_x)
+test_y = np.array(test_y)
+
+full_x = np.concatenate((train_x,test_x),axis=0)
+full_y=np.concatenate((train_y,test_y),axis=0)
+onehot = LabelBinarizer()
+full_y = onehot.fit_transform(full_y)
+
+test_x.shape
+
+# Re-split training and testing data
+# then split training into training and validation
+
+train_x, test_x, train_y, test_y = train_test_split(full_x, full_y, test_size = 0.2, shuffle=True, random_state=33)
+train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, test_size = 0.2, shuffle=True, random_state=33)
+train_x.shape, train_y.shape, val_x.shape, val_y.shape, test_x.shape, test_y.shape
+train_x = np.array(train_x).reshape(4096,208,176,1)
+val_x = np.array(val_x).reshape(1024,208,176,1)
+test_x = np.array(test_x).reshape(1280,208,176,1)
+
+# Transfer Learning
+
+# We made a transfer learning model using Resnet101
+
+# Prepare data for input into Resnet101
+
+train_x_tmp = np.array(train_x).reshape(4096,208,176)
+val_x_tmp = np.array(val_x).reshape(1024,208,176)
+test_x_tmp = np.array(test_x).reshape(1280,208,176)
+
+print(train_x_tmp.shape)
+train_x_3c = np.repeat(train_x_tmp[..., np.newaxis], 3, -1)
+print(train_x_3c.shape) 
+print(val_x_tmp.shape)
+val_x_3c = np.repeat(val_x_tmp[..., np.newaxis], 3, -1)
+print(val_x_3c.shape)  
+print(test_x_tmp.shape)
+test_x_3c = np.repeat(test_x_tmp[..., np.newaxis], 3, -1)
+print(test_x_3c.shape)
+
+# Bring in Resnet101 and make it untrainable
+# Add more trainable layers
+
+pretrained_model = tf.keras.applications.ResNet101(include_top=False, input_shape=(208,176,3))
+pretrained_model.trainable = False
+
+model_tl = keras.Sequential([
+    pretrained_model,
+    Flatten(),
+    Dense(128, activation='relu'),
+    Dropout(0.4),
+    Dense(4, activation='softmax')
+])
+
+# Compiling and fitting transfer learning model
+
+model_tl.compile(optimizer='adam', loss=keras.losses.CategoricalCrossentropy(),metrics=['AUC','accuracy','categorical_accuracy'])
+checkpoint_tl = ModelCheckpoint("checkpoint_model_tl.h5", save_best_only=True)
+es_tl = EarlyStopping(monitor='val_loss', mode='min', patience=10, restore_best_weights=True, verbose=1)
+
+history_tl = model_tl.fit(train_x_3c, train_y, validation_data=(val_x_3c, val_y), batch_size=10, epochs = 50, callbacks=[es_tl, checkpoint_tl])
+
+# Plot accuracy and loss curves
+
+plt.plot(history_tl.history['categorical_accuracy'], label="Training Accuracy")
+plt.plot(history_tl.history['val_categorical_accuracy'], label="Validation Accuracy")
+plt.legend(loc="best")
+plt.show()
+plt.plot(history_tl.history['loss'], label="Training Loss")
+plt.plot(history_tl.history['val_loss'], label="Validation Loss")
+plt.legend(loc="best")
+plt.show()
+
+
+# Evaluate model and build confusion matrix
+
+test_results_tl = model_tl.evaluate(x=test_x_3c, y=test_y)
+
+pred_test_tl = model_tl.predict(test_x_3c, verbose = 1)
+pred_test_tl = onehot.inverse_transform(pred_test_tl)
+
+real_val = onehot.inverse_transform(test_y)
+cm_tl = confusion_matrix(real_val, pred_test_tl, labels=['ND', 'VMILD', 'MILD', 'MOD'])
+cm_tl_df = pd.DataFrame(cm_tl, columns=['ND', 'VMILD', 'MILD', 'MOD'], index=['ND', 'VMILD', 'MILD', 'MOD'])
+cm_tl_df.columns.name = 'Predicted'
+cm_tl_df.index.name = 'Actual'
+sns.heatmap(cm_tl_df, annot=True, fmt='g', cmap='Greens')

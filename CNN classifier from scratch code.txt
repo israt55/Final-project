@@ -1,0 +1,118 @@
+# This project dataset are collected from  following kaggle link:
+
+#https://www.kaggle.com/tourist55/alzheimers-dataset-4-class-of-images
+
+# All the code are originally run in Google Colab
+
+# Importing Necessary Packages
+
+import pandas as pd
+import numpy as np
+import os
+import tensorflow as tf
+import cv2
+import keras
+from keras.models import Sequential, Model
+from keras.layers import Conv2D, MaxPooling2D, MaxPool2D, Flatten, Dense, Dropout
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.preprocessing import image
+from  matplotlib import pyplot as plt
+import matplotlib.image as mpimg
+get_ipython().run_line_magic('matplotlib', 'inline')
+from skimage.io import imread
+from sklearn.model_selection import train_test_split
+import os
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import LabelBinarizer
+from sklearn.metrics import classification_report, confusion_matrix
+import seaborn as sns
+from google.colab.patches import cv2_imshow
+
+# 1st Method is build from Scratch-CNN clasiffier
+
+# Here data is used as it was pre-split by Kaggle.
+
+
+# Read the dataset
+
+train_set = image.image_dataset_from_directory("/content/drive/MyDrive/final-project/dataset/train",
+                                                            validation_split = 0.2,
+                                                            subset = 'training',
+                                                            seed = 50,
+                                                            image_size = (208, 176),
+                                                            batch_size = 10)
+validation_set = image.image_dataset_from_directory("/content/drive/MyDrive/final-project/dataset/train",
+                                                            validation_split = 0.2,
+                                                            subset = 'validation',
+                                                            seed = 50,
+                                                            image_size = (208, 176),
+                                                            batch_size = 10)
+test_set = image.image_dataset_from_directory("/content/drive/MyDrive/final-project/dataset/test",
+                                                            seed = 50,
+                                                            image_size = (208, 176),
+                                                            batch_size = 10)
+
+
+# class names setting
+
+class_names = ['MildDemented', 'ModerateDemented', 'NonDemented', 'VeryMildDemented']
+train_set.class_names = class_names
+test_set.class_names = class_names
+validation_set.class_names = class_names
+
+# One-Hot encoding labels
+
+def one_hot_label(image, label):
+    label = tf.one_hot(label, 4)
+    return image, label
+    
+train_ds = train_set.map(one_hot_label)
+validation_ds = validation_set.map(one_hot_label)
+test_ds = test_set.map(one_hot_label)
+
+# CNN Classifier using 'adam' optimizer,
+# categorical cross entropy loss function, and AUC + accuracy as metrics
+# with 60 epoch run
+
+classifier= Sequential([Conv2D(16, kernel_size=3, padding='valid', activation='relu', input_shape=(208,176,3)),
+                        MaxPool2D(pool_size = (2,2)),
+                        Conv2D(32, kernel_size=3, padding='valid', activation='relu'),
+                        MaxPool2D(pool_size = (2,2)),
+                        Conv2D(64, kernel_size=3, padding='valid', activation='relu'),
+                        MaxPool2D(pool_size = (2,2)),
+                        Flatten(),
+                        Dense(128, activation='relu'),
+                        Dropout(.5),
+                        Dense(64, activation='relu'),
+                        Dropout(.5),
+                        Dense(4, activation='softmax')])
+
+classifier.compile(optimizer = 'adam', loss= 'categorical_crossentropy', metrics =['AUC', 'accuracy', 'CategoricalAccuracy'])
+es = EarlyStopping(monitor='val_loss', mode='min', patience=10, restore_best_weights=True, verbose=1)
+classifier.summary()
+
+# 1st 60 epoch from scratch
+
+history = classifier.fit_generator(train_ds, epochs = 60, validation_data= validation_ds, callbacks=[es])
+
+# Evaluate the CNN on the test data
+
+classifier.evaluate(test_ds)
+
+# Plotting the  accuracy & loss (training ,validation) curves
+
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+epochs = range(1, len(acc) + 1)
+plt.plot(epochs, acc, label='Training acc')
+plt.plot(epochs, val_acc, label='Validation acc')
+plt.title('Training and validation accuracy')
+plt.legend()
+plt.figure()
+plt.plot(epochs, loss, label='Training loss')
+plt.plot(epochs, val_loss, label='Validation loss')
+plt.title('Training and validation loss')
+plt.legend()
+plt.show()
